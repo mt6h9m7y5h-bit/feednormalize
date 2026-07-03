@@ -91,10 +91,6 @@ impl JobService {
         Ok(())
     }
 
-    pub async fn mark_finished(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
-        Self::complete_with_report(pool, id, JobStatus::Finished, None).await
-    }
-
     pub async fn complete_with_report(
         pool: &PgPool,
         id: Uuid,

@@ -5,7 +5,7 @@ use tracing::{error, info, warn};
 
 use crate::models::JobStatus;
 use crate::services::{JobService, NormalizationEngine, StorageService};
-use crate::validation::ValidationEngine;
+use crate::validation::{ValidationEngine, ValidationLevel};
 
 pub fn spawn(pool: PgPool, storage: StorageService) {
     tokio::spawn(async move {
@@ -21,10 +21,11 @@ pub fn spawn(pool: PgPool, storage: StorageService) {
                     match engine.process_feed(&storage, &job).await {
                         Ok(products) => {
                             let report = validator.validate_products(&products);
-                            let status = if report.summary.errors > 0 {
-                                JobStatus::CompletedWithErrors
-                            } else {
-                                JobStatus::Finished
+                            let status = match report.overall_level() {
+                                ValidationLevel::Error => JobStatus::CompletedWithErrors,
+                                ValidationLevel::Warning | ValidationLevel::Success => {
+                                    JobStatus::Finished
+                                }
                             };
 
                             if let Err(db_error) =
