@@ -9,59 +9,89 @@ use crate::validation::{ValidationEngine, ValidationLevel};
 
 pub fn spawn(pool: PgPool, storage: StorageService) {
     tokio::spawn(async move {
-        let engine = NormalizationEngine::new();
-        let validator = ValidationEngine::new();
         info!("background worker started");
 
         loop {
-            match JobService::claim_next(&pool).await {
-                Ok(Some(job)) => {
-                    info!(job_id = %job.id, format = ?job.format, "processing job");
+            let pool = pool.clone();
+            let storage = storage.clone();
 
-                    match engine.process_feed(&storage, &job).await {
-                        Ok(products) => {
-                            let report = validator.validate_products(&products);
-                            let status = match report.overall_level() {
-                                ValidationLevel::Error => JobStatus::CompletedWithErrors,
-                                ValidationLevel::Warning | ValidationLevel::Success => {
-                                    JobStatus::Finished
-                                }
-                            };
+            let iteration = async move {
+                let engine = NormalizationEngine::new();
+                let validator = ValidationEngine::new();
 
-                            if let Err(db_error) =
-                                JobService::complete_with_report(&pool, job.id, status, Some(&report))
-                                    .await
-                            {
-                                error!(job_id = %job.id, %db_error, "failed to complete job");
+                match JobService::claim_next(&pool).await {
+                    Ok(Some(job)) => {
+                        info!(job_id = %job.id, format = ?job.format, "processing job");
 
-                                if let Err(mark_error) =
-                                    JobService::mark_failed(&pool, job.id).await
+                        match engine.process_feed(&storage, &job).await {
+                            Ok(products) => {
+                                let report = validator.validate_products(&products);
+                                let status = match report.overall_level() {
+                                    ValidationLevel::Error => JobStatus::CompletedWithErrors,
+                                    ValidationLevel::Warning | ValidationLevel::Success => {
+                                        JobStatus::Finished
+                                    }
+                                };
+
+                                if let Err(db_error) =
+                                    JobService::complete_with_report(&pool, job.id, status, Some(&report))
+                                        .await
                                 {
-                                    error!(job_id = %job.id, %mark_error, "failed to mark job failed");
-                                }
-                            } else {
-                                info!(
-                                    job_id = %job.id,
-                                    status = ?status,
-                                    errors = report.summary.errors,
-                                    warnings = report.summary.warnings,
-                                    "job completed"
-                                );
-                            }
-                        }
-                        Err(process_error) => {
-                            error!(job_id = %job.id, %process_error, "job processing failed");
+                                    error!(job_id = %job.id, %db_error, "failed to complete job");
 
-                            if let Err(db_error) = JobService::mark_failed(&pool, job.id).await {
-                                error!(job_id = %job.id, %db_error, "failed to mark job failed");
+                                    if let Err(fallback_error) =
+                                        JobService::set_status(&pool, job.id, status).await
+                                    {
+                                        error!(
+                                            job_id = %job.id,
+                                            %fallback_error,
+                                            "failed to set job status after completion error"
+                                        );
+
+                                        if let Err(mark_error) =
+                                            JobService::mark_failed(&pool, job.id).await
+                                        {
+                                            error!(
+                                                job_id = %job.id,
+                                                %mark_error,
+                                                "failed to mark job failed after completion error"
+                                            );
+                                        }
+                                    } else {
+                                        warn!(
+                                            job_id = %job.id,
+                                            ?status,
+                                            "job completed without validation report after db error"
+                                        );
+                                    }
+                                } else {
+                                    info!(
+                                        job_id = %job.id,
+                                        status = ?status,
+                                        errors = report.summary.errors,
+                                        warnings = report.summary.warnings,
+                                        "job completed"
+                                    );
+                                }
+                            }
+                            Err(process_error) => {
+                                error!(job_id = %job.id, %process_error, "job processing failed");
+
+                                if let Err(db_error) = JobService::mark_failed(&pool, job.id).await {
+                                    error!(job_id = %job.id, %db_error, "failed to mark job failed");
+                                }
                             }
                         }
                     }
+                    Ok(None) => {}
+                    Err(db_error) => {
+                        warn!(%db_error, "failed to claim next job");
+                    }
                 }
-                Ok(None) => {}
-                Err(db_error) => {
-                    warn!(%db_error, "failed to claim next job");
-                }
+            };
+
+            if tokio::spawn(iteration).await.is_err() {
+                error!("background worker iteration panicked");
             }
 
             tokio::time::sleep(Duration::from_secs(5)).await;

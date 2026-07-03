@@ -33,30 +33,6 @@ impl JobService {
         Ok(job)
     }
 
-    pub async fn create_processing(
-        pool: &PgPool,
-        format: Option<String>,
-    ) -> Result<Job, ApiError> {
-        let id = Uuid::new_v4();
-
-        let query = format!(
-            r#"
-            INSERT INTO jobs (id, status, format)
-            VALUES ($1, $2, $3)
-            RETURNING {JOB_COLUMNS}
-            "#
-        );
-
-        let job = sqlx::query_as::<_, Job>(&query)
-            .bind(id)
-            .bind(JobStatus::Processing)
-            .bind(format)
-            .fetch_one(pool)
-            .await?;
-
-        Ok(job)
-    }
-
     pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Job, ApiError> {
         let query = format!(
             r#"
@@ -76,6 +52,10 @@ impl JobService {
     }
 
     pub async fn mark_failed(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+        Self::set_status(pool, id, JobStatus::Failed).await
+    }
+
+    pub async fn set_status(pool: &PgPool, id: Uuid, status: JobStatus) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
             UPDATE jobs
@@ -84,7 +64,7 @@ impl JobService {
             "#,
         )
         .bind(id)
-        .bind(JobStatus::Failed)
+        .bind(status)
         .execute(pool)
         .await?;
 
@@ -178,10 +158,9 @@ impl JobService {
         let query = format!(
             r#"
             UPDATE jobs
-            SET status = $2,
-                filename = $3,
-                size_bytes = $4,
-                format = COALESCE($5, format),
+            SET filename = $2,
+                size_bytes = $3,
+                format = COALESCE($4, format),
                 updated_at = NOW()
             WHERE id = $1
             RETURNING {JOB_COLUMNS}
@@ -190,7 +169,6 @@ impl JobService {
 
         let job = sqlx::query_as::<_, Job>(&query)
             .bind(id)
-            .bind(JobStatus::Processing)
             .bind(filename)
             .bind(size_bytes)
             .bind(format)

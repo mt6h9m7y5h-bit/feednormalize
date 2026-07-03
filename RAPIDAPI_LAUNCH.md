@@ -169,10 +169,11 @@ curl -s "https://feednormalize-production.up.railway.app/jobs/JOB_ID/download" \
 
 Expected: JSON array of `UniversalProduct` objects when job is `finished`.
 
-### Webhook test (no auth)
+### Webhook test
 
 ```bash
 curl -s -X POST "https://feednormalize-production.up.railway.app/webhooks/test" \
+  -H "x-api-key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"event":"test","source":"rapidapi"}'
 ```

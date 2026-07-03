@@ -123,6 +123,8 @@ pub async fn get_job_report(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<JobReportResponse>, ApiError> {
+    info!(job_id = %id, "job report requested");
+
     let (status, job_report) = JobService::find_report(&state.db, id).await?;
 
     match status {
@@ -144,6 +146,14 @@ pub async fn get_job_report(
         .transpose()
         .map_err(|error| ApiError::BadRequest(format!("invalid stored job report: {error}")))?
         .unwrap_or_else(ValidationResult::empty);
+
+    info!(
+        job_id = %id,
+        status = ?status,
+        errors = report.summary.errors,
+        warnings = report.summary.warnings,
+        "job report fetched"
+    );
 
     Ok(Json(JobReportResponse {
         job_id: id,
@@ -177,6 +187,9 @@ pub async fn get_job(
     Path(id): Path<Uuid>,
 ) -> Result<Json<JobResponse>, ApiError> {
     let job = JobService::find_by_id(&state.db, id).await?;
+
+    info!(job_id = %id, status = ?job.status, "job status fetched");
+
     Ok(Json(job.into()))
 }
 
@@ -225,7 +238,10 @@ pub async fn download_job(
     }
 
     let bytes = state.storage.get_object(&output_key).await?;
+    let size_bytes = bytes.len();
     let body = Body::from(bytes);
+
+    info!(job_id = %id, size_bytes, "job download");
 
     let download_name = job
         .filename

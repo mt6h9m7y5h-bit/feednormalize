@@ -396,8 +396,9 @@ paths:
       description: |
         Demonstrates readiness for async notifications and callback URLs per RapidAPI spec.
         Accepts any JSON object, logs the payload server-side, and returns `{"received": true}`.
-        No authentication required — suitable for RapidAPI webhook configuration tests.
       operationId: webhookTest
+      security:
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -419,6 +420,18 @@ paths:
                 received: true
         '400':
           description: Invalid JSON body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: Rate limit exceeded
           content:
             application/json:
               schema:

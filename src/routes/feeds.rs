@@ -85,13 +85,18 @@ pub async fn upload_feed(
 
                 let job = match job_id {
                     Some(id) => JobService::find_by_id(&state.db, id).await?,
-                    None => {
-                        JobService::create_processing(&state.db, detected_format.clone()).await?
-                    }
+                    None => JobService::create(&state.db, detected_format.clone()).await?,
                 };
 
                 let (filename, size_bytes) =
-                    UploadService::store_original_file(&state.storage, job.id, field).await?;
+                    match UploadService::store_original_file(&state.storage, job.id, field).await
+                    {
+                        Ok(uploaded) => uploaded,
+                        Err(error) => {
+                            let _ = JobService::mark_failed(&state.db, job.id).await;
+                            return Err(error);
+                        }
+                    };
 
                 upload = Some((job.id, filename, size_bytes, detected_format));
             }

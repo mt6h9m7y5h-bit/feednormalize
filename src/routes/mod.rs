@@ -15,7 +15,6 @@ use crate::state::AppState;
 pub fn create_router(state: AppState) -> Router {
     let public = Router::new()
         .route("/health", get(health))
-        .merge(webhooks::router())
         .merge(
             SwaggerUi::new("/swagger-ui")
                 .url("/api-docs/openapi.json", ApiDoc::openapi()),
@@ -24,6 +23,7 @@ pub fn create_router(state: AppState) -> Router {
     let protected = Router::new()
         .merge(jobs::protected_router(state.clone()))
         .merge(feeds::router(state.clone()))
+        .merge(webhooks::router(state.clone()))
         .layer(
             ServiceBuilder::new()
                 .layer(middleware::from_fn_with_state(
