@@ -3,11 +3,14 @@ mod error;
 mod middleware;
 mod models;
 mod openapi;
+#[allow(dead_code)]
+mod parsers;
 mod rate_limit;
 mod routes;
 mod services;
 mod state;
 mod utils;
+mod validation;
 mod worker;
 
 use std::net::SocketAddr;

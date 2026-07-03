@@ -74,7 +74,7 @@ impl NormalizationEngine {
         &self,
         storage: &StorageService,
         job: &Job,
-    ) -> Result<(), NormalizationError> {
+    ) -> Result<Vec<UniversalProduct>, NormalizationError> {
         let input_key = original_file_key(job.id);
 
         if !storage.object_exists(&input_key).await? {
@@ -84,14 +84,16 @@ impl NormalizationEngine {
         let input_bytes = storage.get_object(&input_key).await?;
         let format = resolve_format(job);
         let mut writer = NormalizedWriter::new();
+        let mut products = Vec::new();
 
         match format.as_str() {
             "csv" | "tsv" => {
-                self.process_csv(input_bytes, format == "tsv", &mut writer)
+                self.process_csv(input_bytes, format == "tsv", &mut writer, &mut products)
                     .await?;
             }
             "json" | "ndjson" => {
-                self.process_json(input_bytes, &mut writer).await?;
+                self.process_json(input_bytes, &mut writer, &mut products)
+                    .await?;
             }
             other => return Err(NormalizationError::UnsupportedFormat(other.to_owned())),
         }
@@ -100,7 +102,7 @@ impl NormalizationEngine {
             .put_object(&normalized_output_key(job.id), writer.finish())
             .await?;
 
-        Ok(())
+        Ok(products)
     }
 
     /// Maps common supplier field names to the universal schema.
@@ -135,6 +137,7 @@ impl NormalizationEngine {
         input_bytes: Bytes,
         tsv: bool,
         writer: &mut NormalizedWriter,
+        products: &mut Vec<UniversalProduct>,
     ) -> Result<(), NormalizationError> {
         let reader = BufReader::new(Cursor::new(input_bytes));
         let mut csv_reader = AsyncReaderBuilder::new()
@@ -148,6 +151,7 @@ impl NormalizationEngine {
             let record = record?;
             let raw = record_to_json(&headers, &record);
             let product = self.normalize(&raw);
+            products.push(product.clone());
             writer.write_product(&product).await?;
         }
 
@@ -158,6 +162,7 @@ impl NormalizationEngine {
         &self,
         input_bytes: Bytes,
         writer: &mut NormalizedWriter,
+        products: &mut Vec<UniversalProduct>,
     ) -> Result<(), NormalizationError> {
         let mut cursor = Cursor::new(input_bytes);
         let mut buffer = Vec::new();
@@ -168,10 +173,11 @@ impl NormalizationEngine {
             .trim();
 
         if trimmed.starts_with('[') {
-            if let Ok(products) = serde_json::from_str::<Vec<UniversalProduct>>(trimmed) {
-                for product in &products {
+            if let Ok(products_input) = serde_json::from_str::<Vec<UniversalProduct>>(trimmed) {
+                for product in &products_input {
                     let raw = serde_json::to_value(product)?;
                     let normalized = self.normalize(&raw);
+                    products.push(normalized.clone());
                     writer.write_product(&normalized).await?;
                 }
                 return Ok(());
@@ -180,6 +186,7 @@ impl NormalizationEngine {
             let rows: Vec<Value> = serde_json::from_str(trimmed)?;
             for row in rows {
                 let product = self.normalize(&row);
+                products.push(product.clone());
                 writer.write_product(&product).await?;
             }
             return Ok(());
@@ -188,6 +195,7 @@ impl NormalizationEngine {
         for line in trimmed.lines().filter(|line| !line.trim().is_empty()) {
             let row: Value = serde_json::from_str(line)?;
             let product = self.normalize(&row);
+            products.push(product.clone());
             writer.write_product(&product).await?;
         }
 

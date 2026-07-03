@@ -15,11 +15,13 @@ use crate::error::{ApiError, ErrorBody};
 use crate::models::{JobResponse, JobStatus, UniversalProduct};
 use crate::services::{JobService, NormalizationEngine, normalized_output_key};
 use crate::state::AppState;
+use crate::validation::{ValidationIssue, ValidationResult, ValidationSummary};
 
 pub fn protected_router(state: AppState) -> Router {
     Router::new()
         .route("/jobs", post(create_job))
         .route("/jobs/{id}", get(get_job))
+        .route("/jobs/{id}/report", get(get_job_report))
         .route("/jobs/{id}/download", get(download_job))
         .with_state(state)
 }
@@ -89,12 +91,74 @@ pub async fn create_job(
     ))
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct JobReportResponse {
+    pub job_id: Uuid,
+    pub status: JobStatus,
+    pub summary: ValidationSummary,
+    pub issues: Vec<ValidationIssue>,
+}
+
+/// Get validation report for a completed job.
+#[utoipa::path(
+    get,
+    path = "/jobs/{id}/report",
+    summary = "Get job validation report",
+    description = "Returns field-level validation results produced after normalization. Available when job `status` is `finished` or `completed_with_errors`. Jobs completed before validation was enabled return an empty report.",
+    params(
+        ("id" = Uuid, Path, description = "Job identifier"),
+    ),
+    security(("ApiKeyAuth" = [])),
+    responses(
+        (status = 200, description = "Validation report", body = JobReportResponse),
+        (status = 400, description = "Job not complete", body = ErrorBody),
+        (status = 401, description = "Missing or invalid API key", body = ErrorBody),
+        (status = 404, description = "Job not found", body = ErrorBody),
+        (status = 429, description = "Rate limit exceeded", body = ErrorBody),
+        (status = 500, description = "Internal server error", body = ErrorBody),
+    ),
+    tag = "Jobs"
+)]
+pub async fn get_job_report(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<JobReportResponse>, ApiError> {
+    let (status, job_report) = JobService::find_report(&state.db, id).await?;
+
+    match status {
+        JobStatus::Finished | JobStatus::CompletedWithErrors => {}
+        JobStatus::Failed => {
+            return Err(ApiError::NotFound(format!(
+                "validation report for job {id} not found"
+            )));
+        }
+        _ => {
+            return Err(ApiError::BadRequest(format!(
+                "job {id} is not complete (status: {status:?})"
+            )));
+        }
+    }
+
+    let report = job_report
+        .map(|value| serde_json::from_value::<ValidationResult>(value))
+        .transpose()
+        .map_err(|error| ApiError::BadRequest(format!("invalid stored job report: {error}")))?
+        .unwrap_or_else(ValidationResult::empty);
+
+    Ok(Json(JobReportResponse {
+        job_id: id,
+        status,
+        summary: report.summary,
+        issues: report.issues,
+    }))
+}
+
 /// Get the current status of a normalization job.
 #[utoipa::path(
     get,
     path = "/jobs/{id}",
     summary = "Get job status and metadata",
-    description = "Poll this endpoint after upload or job creation. When `status` is `finished`, call `GET /jobs/{id}/download` to retrieve normalized JSON output.",
+    description = "Poll this endpoint after upload or job creation. When `status` is `finished` or `completed_with_errors`, call `GET /jobs/{id}/download` to retrieve normalized JSON output and `GET /jobs/{id}/report` for validation details.",
     params(
         ("id" = Uuid, Path, description = "Job identifier"),
     ),
@@ -121,7 +185,7 @@ pub async fn get_job(
     get,
     path = "/jobs/{id}/download",
     summary = "Download normalized JSON output",
-    description = "Returns the normalized product catalog as a JSON file attachment. Only available when job `status` is `finished`. Each item follows the `UniversalProduct` schema with automatically mapped fields (sku, title, price, currency, ean).",
+    description = "Returns the normalized product catalog as a JSON file attachment. Available when job `status` is `finished` or `completed_with_errors`. Each item follows the `UniversalProduct` schema with automatically mapped fields (sku, title, price, currency, ean).",
     params(
         ("id" = Uuid, Path, description = "Job identifier"),
     ),
@@ -142,7 +206,10 @@ pub async fn download_job(
 ) -> Result<Response, ApiError> {
     let job = JobService::find_by_id(&state.db, id).await?;
 
-    if job.status != JobStatus::Finished {
+    if !matches!(
+        job.status,
+        JobStatus::Finished | JobStatus::CompletedWithErrors
+    ) {
         return Err(ApiError::BadRequest(format!(
             "job {id} is not ready for download (status: {:?})",
             job.status

@@ -10,6 +10,7 @@ pub enum JobStatus {
     Queued,
     Processing,
     Finished,
+    CompletedWithErrors,
     Failed,
 }
 

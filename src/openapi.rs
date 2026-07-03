@@ -6,8 +6,9 @@ use utoipa::Modify;
 use crate::error::ErrorBody;
 use crate::models::{Job, JobResponse, JobStatus, UniversalProduct, UploadResponse};
 use crate::routes::feeds::UploadForm;
-use crate::routes::jobs::{CreateJobRequest, CreateJobResponse, HealthResponse};
+use crate::routes::jobs::{CreateJobRequest, CreateJobResponse, HealthResponse, JobReportResponse};
 use crate::routes::webhooks::WebhookTestResponse;
+use crate::validation::{ValidationIssue, ValidationLevel, ValidationResult, ValidationSummary};
 
 struct SecurityAddon;
 
@@ -54,6 +55,7 @@ impl Modify for ServersAddon {
     paths(
         crate::routes::jobs::create_job,
         crate::routes::jobs::get_job,
+        crate::routes::jobs::get_job_report,
         crate::routes::jobs::download_job,
         crate::routes::feeds::upload_feed,
         crate::routes::jobs::health,
@@ -65,6 +67,7 @@ impl Modify for ServersAddon {
             Job,
             JobStatus,
             JobResponse,
+            JobReportResponse,
             CreateJobRequest,
             CreateJobResponse,
             UploadResponse,
@@ -72,6 +75,10 @@ impl Modify for ServersAddon {
             HealthResponse,
             WebhookTestResponse,
             ErrorBody,
+            ValidationResult,
+            ValidationSummary,
+            ValidationIssue,
+            ValidationLevel,
         )
     ),
     tags(

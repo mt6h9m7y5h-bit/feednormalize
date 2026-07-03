@@ -110,10 +110,11 @@ paths:
       summary: Get job status and metadata
       description: |
         Poll this endpoint after `POST /feeds/upload` or `POST /jobs`. Repeat until `status`
-        is `finished` (success) or `failed`.
+        is `finished` (success), `completed_with_errors` (normalized with validation issues), or `failed`.
 
         **RapidAPI Playground:** Use the `job_id` from the upload or create response as the
-        path parameter. When finished, proceed to `GET /jobs/{id}/download`.
+        path parameter. When finished, proceed to `GET /jobs/{id}/download` and optionally
+        `GET /jobs/{id}/report` for validation details.
       operationId: getJob
       security:
         - ApiKeyAuth: []
@@ -165,6 +166,64 @@ paths:
               example:
                 error: internal database error
 
+  /jobs/{id}/report:
+    get:
+      tags:
+        - Jobs
+      summary: Get job validation report
+      description: |
+        Returns field-level validation results produced after normalization.
+        Available when job `status` is `finished` or `completed_with_errors`.
+        Jobs completed before validation was enabled return an empty report.
+      operationId: getJobReport
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Job identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Validation report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobReportResponse'
+        '400':
+          description: Job not complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '404':
+          description: Job not found or report unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+
   /jobs/{id}/download:
     get:
       tags:
@@ -172,7 +231,7 @@ paths:
       summary: Download normalized JSON output
       description: |
         Returns the normalized product catalog as a JSON file attachment.
-        Only available when job `status` is `finished`. Each item follows the
+        Only available when job `status` is `finished` or `completed_with_errors`. Each item follows the
         `UniversalProduct` schema with automatically mapped fields (sku, title, price, currency, ean).
 
         **RapidAPI Playground:** Call only after polling confirms `status: finished`.
@@ -520,7 +579,66 @@ components:
         - queued
         - processing
         - finished
+        - completed_with_errors
         - failed
+
+    JobReportResponse:
+      type: object
+      required:
+        - job_id
+        - status
+        - summary
+        - issues
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        summary:
+          $ref: '#/components/schemas/ValidationSummary'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+
+    ValidationSummary:
+      type: object
+      required:
+        - errors
+        - warnings
+      properties:
+        errors:
+          type: integer
+          minimum: 0
+        warnings:
+          type: integer
+          minimum: 0
+
+    ValidationIssue:
+      type: object
+      required:
+        - row
+        - field
+        - level
+        - message
+      properties:
+        row:
+          type: integer
+          minimum: 1
+        field:
+          type: string
+        level:
+          $ref: '#/components/schemas/ValidationLevel'
+        message:
+          type: string
+
+    ValidationLevel:
+      type: string
+      enum:
+        - success
+        - warning
+        - error
 
     UniversalProduct:
       type: object
