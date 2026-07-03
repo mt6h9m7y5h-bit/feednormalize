@@ -1,0 +1,38 @@
+FeedNormalize — Enterprise-Ready, Rust-Powered Product Feed Normalization
+
+Turn inconsistent supplier catalogs into one clean, universal product schema. FeedNormalize is infrastructure for e-commerce teams that need speed and reliability—not another hand-built CSV parser. The API accepts CSV and JSON feeds, maps common field names automatically (SKU, title, price, currency, EAN), and returns normalized JSON through a simple async job workflow.
+
+Built in Rust for high throughput and low overhead. API key authentication, rate limiting, and health checks are included for production use on Railway or your own deployment.
+
+---
+
+Getting Started
+
+Complete your first normalization in four steps:
+
+1. Authenticate
+   Add your API key to every protected request:
+   Header: x-api-key: YOUR_API_KEY
+
+2. Upload a feed
+   POST /feeds/upload
+   Send multipart/form-data with a file field containing your CSV or JSON product feed.
+   The API creates a job, stores the file, and starts processing asynchronously.
+   Response (202): job_id, status, filename, size_bytes
+
+3. Poll job status
+   GET /jobs/{id}
+   Use the job_id from the upload response. Repeat until status is finished (or failed).
+   Response (200): id, status, format, filename, size_bytes, created_at, updated_at
+
+4. Download normalized output
+   GET /jobs/{id}/download
+   Available when status is finished. Returns a JSON array of UniversalProduct records with mapped sku, title, price, currency, and ean fields.
+
+Optional: preview normalization without uploading
+   POST /jobs with a preview object in the body to test how a single raw record maps to the universal schema before processing a full feed.
+
+Health check (no API key required)
+   GET /health → {"status":"ok"}
+
+Interactive docs are available at /swagger-ui on your deployed instance.

@@ -1,0 +1,31 @@
+# FeedNormalize — Railway deployment
+#
+# Environment variables (set in Railway project → Variables):
+#
+#   DATABASE_URL   (required) PostgreSQL connection string.
+#                  Add a Railway PostgreSQL plugin and reference its URL, e.g.:
+#                  postgres://user:pass@host:5432/railway
+#
+#   RUST_LOG       (optional) tracing filter; default in-app is "info".
+#                  Examples: info, debug, feednormalize=debug
+#
+#   PORT           (auto)     Railway injects this; the app listens on it.
+#                  Do not hard-code in production.
+#
+#   HOST           (optional) Bind address; default 0.0.0.0 (required for containers).
+#
+#   API_KEY_SEED   (optional) When the api_keys table is empty on first boot,
+#                  this key is inserted (default: dev-test-api-key).
+#                  Set a strong secret in production.
+#
+#   REDIS_URL      (optional) Distributed rate limiting; omit to use in-memory limits.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

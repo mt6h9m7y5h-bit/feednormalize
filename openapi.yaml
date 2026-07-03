@@ -1,0 +1,424 @@
+openapi: 3.1.0
+info:
+  title: FeedNormalize API
+  description: |
+    Universal Product Feed Normalization API.
+
+    Upload supplier product feeds (CSV, JSON, TSV, NDJSON), track async normalization jobs,
+    and download a standardized JSON catalog. Protected endpoints require the `x-api-key` header.
+  version: 0.1.0
+
+servers:
+  - url: https://{domain}
+    description: Production deployment (Railway)
+    variables:
+      domain:
+        default: feednormalize.railway.app
+        description: Your Railway public hostname (set in RapidAPI base URL)
+
+tags:
+  - name: Jobs
+    description: Create and monitor normalization jobs
+  - name: Feeds
+    description: Upload product feed files
+  - name: Health
+    description: Service health checks
+
+paths:
+  /jobs:
+    post:
+      tags:
+        - Jobs
+      summary: Queue a normalization job
+      description: |
+        Creates an async normalization job. Optionally pass a `preview` record to see how
+        supplier field names map to the universal schema before uploading a full feed.
+        Returns `202 Accepted` with a `job_id` for status polling.
+      operationId: createJob
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+            example:
+              format: csv
+              preview:
+                article_number: SKU-1001
+                product_name: Wireless Headphones
+                gross_price: "29,99"
+                currency: EUR
+      responses:
+        '202':
+          description: Job accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateJobResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+
+  /jobs/{id}:
+    get:
+      tags:
+        - Jobs
+      summary: Get job status and metadata
+      description: |
+        Poll this endpoint after upload or job creation. When `status` is `finished`,
+        call `GET /jobs/{id}/download` to retrieve normalized JSON output.
+      operationId: getJob
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Job identifier (UUID from upload or create response)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+
+  /jobs/{id}/download:
+    get:
+      tags:
+        - Jobs
+      summary: Download normalized JSON output
+      description: |
+        Returns the normalized product catalog as a JSON file attachment.
+        Only available when job `status` is `finished`. Each item follows the
+        `UniversalProduct` schema with automatically mapped fields.
+      operationId: downloadJob
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Job identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Normalized JSON file
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UniversalProduct'
+        '400':
+          description: Job not ready for download
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '404':
+          description: Job or output not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+
+  /feeds/upload:
+    post:
+      tags:
+        - Feeds
+      summary: Upload a product feed for normalization
+      description: |
+        Primary entry point for feed normalization. Send `multipart/form-data` with a
+        required `file` field (CSV or JSON). Optionally include `job_id` to attach the
+        upload to an existing job (must be sent before the file field).
+        Processing runs asynchronously; poll `GET /jobs/{id}` until finished.
+      operationId: uploadFeed
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadForm'
+      responses:
+        '202':
+          description: Feed accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          description: Invalid multipart payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '404':
+          description: Referenced job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Check API health
+      description: |
+        Lightweight liveness check. No authentication required. Use for uptime monitoring
+        and RapidAPI health probes.
+      operationId: health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: API key issued for your FeedNormalize deployment or RapidAPI subscription
+
+  schemas:
+    CreateJobRequest:
+      type: object
+      properties:
+        format:
+          type: string
+          nullable: true
+          description: Source feed format, e.g. "csv" or "json"
+        preview:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Optional preview record for early normalization checks
+      additionalProperties: false
+
+    CreateJobResponse:
+      type: object
+      required:
+        - job_id
+        - status
+        - created_at
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        format:
+          type: string
+          nullable: true
+        preview_product:
+          allOf:
+            - $ref: '#/components/schemas/UniversalProduct'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    JobResponse:
+      type: object
+      required:
+        - id
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        format:
+          type: string
+          nullable: true
+        filename:
+          type: string
+          nullable: true
+        size_bytes:
+          type: integer
+          format: int64
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UploadResponse:
+      type: object
+      required:
+        - job_id
+        - status
+        - filename
+        - size_bytes
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        filename:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+
+    UploadForm:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: Optional existing job ID to attach the upload to (send before file)
+        file:
+          type: string
+          format: binary
+          description: Product feed file (CSV or JSON)
+      required:
+        - file
+
+    JobStatus:
+      type: string
+      enum:
+        - queued
+        - processing
+        - finished
+        - failed
+
+    UniversalProduct:
+      type: object
+      description: Canonical product representation used across all feed formats
+      properties:
+        sku:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        price:
+          type: number
+          format: double
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+        ean:
+          type: string
+          nullable: true
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: ok
+
+    ErrorBody:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string

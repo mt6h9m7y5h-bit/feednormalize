@@ -1,0 +1,1102 @@
+# ====================================================================
+# PROJECT BLUEPRINT
+# FeedNormalize
+# "Universal Product Feed Normalization API"
+# Language: Rust
+# Goal: Enterprise-grade API that converts ANY supplier product feed
+# into one clean universal schema.
+#
+# IMPORTANT
+# Cursor should treat this document as the architectural source of truth.
+#
+# PRINCIPLES
+#
+# - API First
+# - Rust Everywhere
+# - Zero unnecessary complexity
+# - Streaming instead of loading files into memory
+# - Horizontal scalability
+# - Multi-tenant
+# - Self-Service SaaS
+# - No custom code per customer
+# - Enterprise performance
+# ====================================================================
+
+
+
+#######################################################################
+# 1. PRODUCT VISION
+#######################################################################
+
+FeedNormalize is NOT a CSV converter.
+
+FeedNormalize is an infrastructure layer.
+
+Goal:
+
+Any company should be able to send us ANY product feed.
+
+Regardless of:
+
+CSV
+XML
+JSON
+Excel
+ZIP
+FTP
+SFTP
+Google Sheets
+API endpoint
+
+and receive a standardized product catalog.
+
+Think:
+
+"Stripe for Product Feeds"
+
+or
+
+"Cloudflare for Supplier Data"
+
+NOT
+
+"CSV Parser"
+
+
+
+
+#######################################################################
+# 2. TARGET CUSTOMERS
+#######################################################################
+
+Primary
+
+• Ecommerce agencies
+• Marketplace sellers
+• Shopify stores
+• WooCommerce stores
+• Shopware stores
+• Magento stores
+• PIM systems
+• ERP systems
+
+Secondary
+
+• Suppliers
+• Dropshipping companies
+• Data providers
+• SaaS companies
+• Procurement software
+• Integrators
+
+
+
+
+#######################################################################
+# 3. CORE VALUE
+#######################################################################
+
+Customer problem:
+
+Every supplier exports products differently.
+
+Supplier A
+
+price
+
+Supplier B
+
+product_price
+
+Supplier C
+
+cost
+
+Supplier D
+
+gross_price
+
+Images
+
+img1
+image
+image_url
+picture
+
+Everything is inconsistent.
+
+FeedNormalize makes EVERYTHING identical.
+
+One API.
+
+One schema.
+
+One integration.
+
+
+
+
+#######################################################################
+# 4. UNIVERSAL INPUTS
+#######################################################################
+
+Must support
+
+CSV
+
+XML
+
+JSON
+
+NDJSON
+
+Excel XLS
+
+Excel XLSX
+
+ZIP
+
+GZIP
+
+TSV
+
+TXT
+
+FTP
+
+SFTP
+
+HTTP Download
+
+HTTPS Download
+
+Amazon S3
+
+Google Cloud Storage
+
+Azure Blob
+
+Google Sheets
+
+Webhook Upload
+
+Multipart Upload
+
+
+
+
+#######################################################################
+# 5. UNIVERSAL OUTPUTS
+#######################################################################
+
+JSON
+
+CSV
+
+XML
+
+NDJSON
+
+Shopify Format
+
+WooCommerce Format
+
+Magento Format
+
+Shopware Format
+
+Custom Mapping Templates
+
+
+
+
+#######################################################################
+# 6. UNIVERSAL PRODUCT SCHEMA
+#######################################################################
+
+sku
+
+ean
+
+upc
+
+gtin
+
+mpn
+
+isbn
+
+title
+
+subtitle
+
+description
+
+short_description
+
+brand
+
+manufacturer
+
+supplier
+
+category
+
+subcategory
+
+tags
+
+price
+
+currency
+
+sale_price
+
+cost
+
+stock
+
+availability
+
+lead_time
+
+weight
+
+dimensions
+
+country_of_origin
+
+images[]
+
+documents[]
+
+attributes{}
+
+variants[]
+
+seo_title
+
+seo_description
+
+status
+
+
+
+
+#######################################################################
+# 7. AUTOMATIC FIELD MAPPING
+#######################################################################
+
+The API should detect fields automatically.
+
+Example
+
+article_number
+
+sku
+
+product_id
+
+item_no
+
+id
+
+↓
+
+sku
+
+Example
+
+product_name
+
+title
+
+headline
+
+description_title
+
+↓
+
+title
+
+No manual mapping required for common cases.
+
+Use
+
+Dictionary
+
+Synonym database
+
+Fuzzy matching
+
+Confidence score
+
+
+
+
+#######################################################################
+# 8. DATA CLEANING ENGINE
+#######################################################################
+
+Automatically
+
+Trim spaces
+
+Normalize unicode
+
+UTF8 repair
+
+Remove HTML
+
+Remove duplicate whitespace
+
+Fix line breaks
+
+Normalize quotation marks
+
+Normalize apostrophes
+
+Normalize commas
+
+Normalize decimal separators
+
+Normalize currencies
+
+Normalize image URLs
+
+Remove invisible characters
+
+Detect encoding
+
+Convert to UTF8
+
+Repair broken CSV rows
+
+
+
+
+#######################################################################
+# 9. PRICE ENGINE
+#######################################################################
+
+Convert
+
+12,99€
+
+€12.99
+
+USD 14.55
+
+CHF 9.95
+
+↓
+
+price
+
+currency
+
+decimal
+
+Support
+
+EUR
+
+USD
+
+GBP
+
+CHF
+
+JPY
+
+...
+
+
+
+
+#######################################################################
+# 10. CATEGORY ENGINE
+#######################################################################
+
+Map
+
+Phones
+
+Cellphones
+
+Smartphones
+
+Mobile Phones
+
+↓
+
+Electronics
+
+↓
+
+Phones
+
+↓
+
+Smartphones
+
+Support custom taxonomy.
+
+
+
+
+#######################################################################
+# 11. DUPLICATE DETECTION
+#######################################################################
+
+Detect duplicates using
+
+EAN
+
+SKU
+
+Title similarity
+
+Image similarity
+
+Brand
+
+Model
+
+MPN
+
+Confidence score
+
+
+
+
+#######################################################################
+# 12. IMAGE VALIDATION
+#######################################################################
+
+Check
+
+Image reachable
+
+HTTPS
+
+File size
+
+Resolution
+
+Duplicate images
+
+Broken URLs
+
+Timeout
+
+Content-Type
+
+Generate warnings.
+
+
+
+
+#######################################################################
+# 13. VALIDATION ENGINE
+#######################################################################
+
+Detect
+
+Missing title
+
+Missing SKU
+
+Invalid EAN
+
+Missing images
+
+Negative prices
+
+Missing currency
+
+Duplicate SKU
+
+Invalid stock
+
+Missing category
+
+Return warnings.
+
+Never silently fail.
+
+
+
+
+#######################################################################
+# 14. CHANGE DETECTION
+#######################################################################
+
+Compare
+
+Yesterday
+
+↓
+
+Today
+
+Return
+
+New products
+
+Deleted products
+
+Updated products
+
+Price changes
+
+Stock changes
+
+Image changes
+
+
+
+
+#######################################################################
+# 15. JOB SYSTEM
+#######################################################################
+
+Everything async.
+
+POST upload
+
+↓
+
+Queue
+
+↓
+
+Worker
+
+↓
+
+Processing
+
+↓
+
+Finished
+
+↓
+
+Download
+
+Never block API requests.
+
+Support
+
+Retry
+
+Priority
+
+Cancellation
+
+
+
+
+#######################################################################
+# 16. API ENDPOINTS
+#######################################################################
+
+POST /jobs
+
+POST /feeds/upload
+
+GET /jobs/{id}
+
+GET /jobs/{id}/status
+
+GET /jobs/{id}/download
+
+GET /feeds
+
+DELETE /feeds/{id}
+
+POST /normalize
+
+POST /validate
+
+POST /compare
+
+POST /mapping
+
+GET /usage
+
+GET /limits
+
+GET /health
+
+GET /metrics
+
+
+
+
+#######################################################################
+# 17. AUTHENTICATION
+#######################################################################
+
+API Keys
+
+Bearer Token
+
+JWT
+
+Organization support
+
+Workspace support
+
+Role support
+
+Admin
+
+Developer
+
+Read Only
+
+
+
+
+#######################################################################
+# 18. BILLING
+#######################################################################
+
+Stripe
+
+Monthly
+
+Yearly
+
+Usage based
+
+Credits
+
+Rate limits
+
+Invoices
+
+Customer Portal
+
+Automatic downgrade
+
+
+
+
+#######################################################################
+# 19. DASHBOARD
+#######################################################################
+
+Upload feed
+
+View history
+
+Usage graphs
+
+Errors
+
+Warnings
+
+Downloads
+
+API Keys
+
+Billing
+
+Webhook configuration
+
+Saved mappings
+
+Templates
+
+
+
+
+#######################################################################
+# 20. WEBHOOKS
+#######################################################################
+
+job.finished
+
+job.failed
+
+feed.validated
+
+feed.normalized
+
+feed.changed
+
+
+
+
+#######################################################################
+# 21. SDKs
+#######################################################################
+
+Rust
+
+Go
+
+NodeJS
+
+Python
+
+PHP
+
+Java
+
+C#
+
+Simple examples.
+
+
+
+
+#######################################################################
+# 22. DOCUMENTATION
+#######################################################################
+
+Swagger
+
+OpenAPI
+
+Code examples
+
+SDK examples
+
+Error examples
+
+Interactive Playground
+
+Copy/Paste examples
+
+
+
+
+#######################################################################
+# 23. PERFORMANCE GOALS
+#######################################################################
+
+Target
+
+Millions of products
+
+Streaming parser
+
+Zero-copy where possible
+
+Multi-threading
+
+SIMD where beneficial
+
+Minimal allocations
+
+Memory efficient
+
+Backpressure support
+
+Horizontal scaling
+
+
+
+
+#######################################################################
+# 24. RUST STACK
+#######################################################################
+
+Tokio
+
+Axum
+
+Serde
+
+SQLx
+
+PostgreSQL
+
+Redis
+
+object_store
+
+Apache Arrow (future)
+
+Parquet (future)
+
+Tracing
+
+Metrics
+
+OpenTelemetry
+
+Tower
+
+Reqwest
+
+Rayon (where appropriate)
+
+UUID
+
+Chrono
+
+Validator
+
+
+
+
+#######################################################################
+# 25. ARCHITECTURE
+#######################################################################
+
+API
+
+↓
+
+Gateway
+
+↓
+
+Auth
+
+↓
+
+Rate Limiter
+
+↓
+
+Queue
+
+↓
+
+Workers
+
+↓
+
+Parser Engine
+
+↓
+
+Normalization Engine
+
+↓
+
+Validation Engine
+
+↓
+
+Export Engine
+
+↓
+
+Storage
+
+↓
+
+Dashboard
+
+
+
+
+#######################################################################
+# 26. STORAGE
+#######################################################################
+
+Postgres
+
+Metadata
+
+Redis
+
+Jobs
+
+Caching
+
+Object Storage
+
+Uploaded files
+
+Normalized files
+
+Reports
+
+
+
+
+#######################################################################
+# 27. MONITORING
+#######################################################################
+
+Prometheus
+
+Grafana
+
+Structured logs
+
+Tracing
+
+Health endpoints
+
+Alerts
+
+
+
+
+#######################################################################
+# 28. SECURITY
+#######################################################################
+
+HTTPS only
+
+Encrypted storage
+
+API rate limiting
+
+Request limits
+
+Upload size limits
+
+Virus scan hook
+
+Signed download URLs
+
+Secrets management
+
+Audit logs
+
+
+
+
+#######################################################################
+# 29. ROADMAP
+#######################################################################
+
+PHASE 1
+
+Core upload
+
+CSV
+
+JSON
+
+Normalization
+
+Dashboard
+
+Billing
+
+Authentication
+
+Documentation
+
+-------------------
+
+PHASE 2
+
+XML
+
+Excel
+
+Validation
+
+Category Mapping
+
+Webhooks
+
+SDKs
+
+-------------------
+
+PHASE 3
+
+AI-assisted field mapping
+
+Duplicate detection
+
+Image validation
+
+Feed comparison
+
+Analytics
+
+-------------------
+
+PHASE 4
+
+Marketplace connectors
+
+Shopify export
+
+WooCommerce export
+
+Magento export
+
+Shopware export
+
+S3 integration
+
+FTP sync
+
+Scheduled imports
+
+-------------------
+
+PHASE 5
+
+Enterprise
+
+Organizations
+
+RBAC
+
+Audit logs
+
+SSO
+
+SCIM
+
+Multi-region
+
+High availability
+
+#######################################################################
+# 30. FUTURE FEATURES
+#######################################################################
+
+- AI-assisted attribute mapping
+- AI category classification
+- Product title optimization
+- Automatic translation
+- SEO metadata generation
+- Product enrichment
+- GTIN verification
+- Supplier quality scoring
+- Inventory synchronization
+- Price monitoring
+- Feed scheduling
+- Version history
+- Feed rollback
+- Public status page
+- API analytics
+- GraphQL API
+- CLI tool
+- Terraform Provider
+- Kubernetes Operator
+
+#######################################################################
+# FINAL GOAL
+#######################################################################
+
+Do NOT build "another parser".
+
+Build the fastest, most reliable and developer-friendly product feed
+infrastructure platform on the market.
+
+Every architectural decision should optimize for:
+- Performance
+- Reliability
+- Scalability
+- Excellent developer experience
+- Fully self-service onboarding
+- Minimal operational overhead
+- Enterprise readiness from the beginning

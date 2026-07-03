@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: feednormalize
+      POSTGRES_PASSWORD: feednormalize
+      POSTGRES_DB: feednormalize
+    ports:
+      - "5432:5432"
+    volumes:
+      - feednormalize_pgdata:/var/lib/postgresql/data
+
+volumes:
+  feednormalize_pgdata:

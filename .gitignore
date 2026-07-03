@@ -1,0 +1,17 @@
+# Rust build artifacts
+/target/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Runtime job uploads (ephemeral in production)
+/uploads/
+
+# OS
+.DS_Store
+
+# Local test output
+mein-ergebnis.json
+normalized-feed.csv
