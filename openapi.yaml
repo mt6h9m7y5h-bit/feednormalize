@@ -5,16 +5,20 @@ info:
     Universal Product Feed Normalization API.
 
     Upload supplier product feeds (CSV, JSON, TSV, NDJSON), track async normalization jobs,
-    and download a standardized JSON catalog. Protected endpoints require the `x-api-key` header.
+    and download a standardized JSON catalog. Protected endpoints require the `x-api-key` header
+    (or `x-rapidapi-key` when proxied through RapidAPI).
+
+    **Interactive documentation:** `/swagger-ui`
+    **OpenAPI JSON (for RapidAPI import):** `/api-docs/openapi.json`
   version: 0.1.0
 
 servers:
   - url: https://{domain}
-    description: Production deployment (Railway)
+    description: Production deployment (Railway / RapidAPI)
     variables:
       domain:
-        default: feednormalize.railway.app
-        description: Your Railway public hostname (set in RapidAPI base URL)
+        default: feednormalize-production.up.railway.app
+        description: Your Railway public hostname (set as RapidAPI base URL when publishing)
 
 tags:
   - name: Jobs
@@ -23,6 +27,10 @@ tags:
     description: Upload product feed files
   - name: Health
     description: Service health checks
+  - name: Webhooks
+    description: Callback and notification endpoints
+  - name: Documentation
+    description: Interactive API documentation (served by Swagger UI)
 
 paths:
   /jobs:
@@ -33,6 +41,11 @@ paths:
       description: |
         Creates an async normalization job. Optionally pass a `preview` record to see how
         supplier field names map to the universal schema before uploading a full feed.
+
+        **RapidAPI Playground:** Send a JSON body with an optional `preview` object containing
+        raw supplier fields (e.g. `article_number`, `product_name`, `gross_price`). The response
+        includes a mapped `preview_product` in the universal schema.
+
         Returns `202 Accepted` with a `job_id` for status polling.
       operationId: createJob
       security:
@@ -58,29 +71,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreateJobResponse'
         '400':
-          description: Invalid request
+          description: Invalid request body
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: invalid request
         '401':
           description: Missing or invalid API key
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: missing API key
         '429':
           description: Rate limit exceeded
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: rate limit exceeded
         '500':
           description: Internal server error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: internal database error
 
   /jobs/{id}:
     get:
@@ -88,8 +109,11 @@ paths:
         - Jobs
       summary: Get job status and metadata
       description: |
-        Poll this endpoint after upload or job creation. When `status` is `finished`,
-        call `GET /jobs/{id}/download` to retrieve normalized JSON output.
+        Poll this endpoint after `POST /feeds/upload` or `POST /jobs`. Repeat until `status`
+        is `finished` (success) or `failed`.
+
+        **RapidAPI Playground:** Use the `job_id` from the upload or create response as the
+        path parameter. When finished, proceed to `GET /jobs/{id}/download`.
       operationId: getJob
       security:
         - ApiKeyAuth: []
@@ -114,24 +138,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: invalid API key
         '404':
           description: Job not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: job not found
         '429':
           description: Rate limit exceeded
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: rate limit exceeded
         '500':
           description: Internal server error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: internal database error
 
   /jobs/{id}/download:
     get:
@@ -141,7 +173,10 @@ paths:
       description: |
         Returns the normalized product catalog as a JSON file attachment.
         Only available when job `status` is `finished`. Each item follows the
-        `UniversalProduct` schema with automatically mapped fields.
+        `UniversalProduct` schema with automatically mapped fields (sku, title, price, currency, ean).
+
+        **RapidAPI Playground:** Call only after polling confirms `status: finished`.
+        The response is a JSON array of normalized products ready for your PIM or storefront pipeline.
       operationId: downloadJob
       security:
         - ApiKeyAuth: []
@@ -168,30 +203,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: "job 550e8400-e29b-41d4-a716-446655440000 is not ready for download (status: Processing)"
         '401':
           description: Missing or invalid API key
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: missing API key
         '404':
           description: Job or output not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: normalized output for job not found
         '429':
           description: Rate limit exceeded
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: rate limit exceeded
         '500':
           description: Internal server error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: internal storage error
 
   /feeds/upload:
     post:
@@ -202,7 +247,12 @@ paths:
         Primary entry point for feed normalization. Send `multipart/form-data` with a
         required `file` field (CSV or JSON). Optionally include `job_id` to attach the
         upload to an existing job (must be sent before the file field).
-        Processing runs asynchronously; poll `GET /jobs/{id}` until finished.
+
+        **RapidAPI Playground:** Use the file upload control to attach a CSV or JSON product feed.
+        Processing runs asynchronously; poll `GET /jobs/{id}` until `status` is `finished`,
+        then download results with `GET /jobs/{id}/download`.
+
+        Returns `202 Accepted` with `job_id`, `status`, `filename`, and `size_bytes`.
       operationId: uploadFeed
       security:
         - ApiKeyAuth: []
@@ -225,20 +275,91 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: missing file field
         '401':
           description: Missing or invalid API key
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: invalid API key
         '404':
           description: Referenced job not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: job not found
         '429':
           description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: rate limit exceeded
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+              example:
+                error: internal storage error
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Check API health
+      description: |
+        Lightweight liveness check. No authentication required. Use for uptime monitoring
+        and RapidAPI health probes. Returns `{"status":"ok"}` when the service is running.
+      operationId: health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+
+  /webhooks/test:
+    post:
+      tags:
+        - Webhooks
+      summary: Receive a test webhook callback
+      description: |
+        Demonstrates readiness for async notifications and callback URLs per RapidAPI spec.
+        Accepts any JSON object, logs the payload server-side, and returns `{"received": true}`.
+        No authentication required — suitable for RapidAPI webhook configuration tests.
+      operationId: webhookTest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            example:
+              event: job.finished
+              job_id: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        '200':
+          description: Payload received and acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookTestResponse'
+              example:
+                received: true
+        '400':
+          description: Invalid JSON body
           content:
             application/json:
               schema:
@@ -250,22 +371,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
 
-  /health:
+  /swagger-ui:
     get:
       tags:
-        - Health
-      summary: Check API health
+        - Documentation
+      summary: Interactive Swagger UI
       description: |
-        Lightweight liveness check. No authentication required. Use for uptime monitoring
-        and RapidAPI health probes.
-      operationId: health
+        Browser-based API explorer powered by Swagger UI. Browse all endpoints, view schemas,
+        and try requests against your deployment. No authentication required to view docs.
+      operationId: swaggerUi
       responses:
         '200':
-          description: Service is healthy
+          description: Swagger UI HTML page
+
+  /api-docs/openapi.json:
+    get:
+      tags:
+        - Documentation
+      summary: OpenAPI specification (JSON)
+      description: |
+        Machine-readable OpenAPI 3.1 document. Import this URL into the RapidAPI dashboard
+        when creating or updating your API definition.
+      operationId: openApiJson
+      responses:
+        '200':
+          description: OpenAPI JSON document
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
+                type: object
 
 components:
   securitySchemes:
@@ -273,7 +407,10 @@ components:
       type: apiKey
       in: header
       name: x-api-key
-      description: API key issued for your FeedNormalize deployment or RapidAPI subscription
+      description: |
+        API key for direct access to your FeedNormalize deployment. When using RapidAPI,
+        clients may also send `x-rapidapi-key` (RapidAPI subscription key) — the server
+        accepts either header.
 
   schemas:
     CreateJobRequest:
@@ -415,6 +552,15 @@ components:
           type: string
           example: ok
 
+    WebhookTestResponse:
+      type: object
+      required:
+        - received
+      properties:
+        received:
+          type: boolean
+          example: true
+
     ErrorBody:
       type: object
       required:
@@ -422,3 +568,5 @@ components:
       properties:
         error:
           type: string
+          description: Human-readable error message
+      description: Standard error response returned by all protected endpoints

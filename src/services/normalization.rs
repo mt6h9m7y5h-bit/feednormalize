@@ -1,16 +1,15 @@
-use std::path::Path;
-
+use bytes::Bytes;
 use csv_async::AsyncReaderBuilder;
 use futures_util::StreamExt;
 use serde_json::{Value, json};
+use std::io::Cursor;
 use thiserror::Error;
-use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, BufReader};
 use uuid::Uuid;
 
 use crate::models::{Job, UniversalProduct};
+use crate::services::{StorageService, normalized_output_key, original_file_key};
 use crate::utils::parsing::{parse_price, trim_or_none};
-use crate::utils::{normalized_output_path, original_file_path};
 
 #[derive(Debug, Error)]
 pub enum NormalizationError {
@@ -24,40 +23,41 @@ pub enum NormalizationError {
     Json(#[from] serde_json::Error),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("storage error: {0}")]
+    Storage(#[from] crate::services::StorageError),
 }
 
 struct NormalizedWriter {
-    output: File,
+    output: Vec<u8>,
     first: bool,
 }
 
 impl NormalizedWriter {
-    async fn new(path: &Path) -> Result<Self, NormalizationError> {
-        let mut output = File::create(path).await?;
-        output.write_all(b"[\n").await?;
+    fn new() -> Self {
+        let mut output = Vec::new();
+        output.extend_from_slice(b"[\n");
 
-        Ok(Self {
+        Self {
             output,
             first: true,
-        })
+        }
     }
 
     async fn write_product(&mut self, product: &UniversalProduct) -> Result<(), NormalizationError> {
         if !self.first {
-            self.output.write_all(b",\n").await?;
+            self.output.extend_from_slice(b",\n");
         }
         self.first = false;
 
         let encoded = serde_json::to_vec(product)?;
-        self.output.write_all(&encoded).await?;
+        self.output.extend_from_slice(&encoded);
 
         Ok(())
     }
 
-    async fn finish(mut self) -> Result<(), NormalizationError> {
-        self.output.write_all(b"\n]\n").await?;
-        self.output.flush().await?;
-        Ok(())
+    fn finish(mut self) -> Bytes {
+        self.output.extend_from_slice(b"\n]\n");
+        Bytes::from(self.output)
     }
 }
 
@@ -70,29 +70,36 @@ impl NormalizationEngine {
         Self
     }
 
-    pub async fn process_feed(&self, job: &Job) -> Result<(), NormalizationError> {
-        let input_path = original_file_path(job.id);
-        let output_path = normalized_output_path(job.id);
+    pub async fn process_feed(
+        &self,
+        storage: &StorageService,
+        job: &Job,
+    ) -> Result<(), NormalizationError> {
+        let input_key = original_file_key(job.id);
 
-        if !input_path.exists() {
+        if !storage.object_exists(&input_key).await? {
             return Err(NormalizationError::InputMissing(job.id));
         }
 
+        let input_bytes = storage.get_object(&input_key).await?;
         let format = resolve_format(job);
-        let mut writer = NormalizedWriter::new(&output_path).await?;
+        let mut writer = NormalizedWriter::new();
 
         match format.as_str() {
             "csv" | "tsv" => {
-                self.process_csv(&input_path, format == "tsv", &mut writer)
+                self.process_csv(input_bytes, format == "tsv", &mut writer)
                     .await?;
             }
             "json" | "ndjson" => {
-                self.process_json(&input_path, &mut writer).await?;
+                self.process_json(input_bytes, &mut writer).await?;
             }
             other => return Err(NormalizationError::UnsupportedFormat(other.to_owned())),
         }
 
-        writer.finish().await?;
+        storage
+            .put_object(&normalized_output_key(job.id), writer.finish())
+            .await?;
+
         Ok(())
     }
 
@@ -125,17 +132,17 @@ impl NormalizationEngine {
 
     async fn process_csv(
         &self,
-        input_path: &Path,
+        input_bytes: Bytes,
         tsv: bool,
         writer: &mut NormalizedWriter,
     ) -> Result<(), NormalizationError> {
-        let file = File::open(input_path).await?;
-        let mut reader = AsyncReaderBuilder::new()
+        let reader = BufReader::new(Cursor::new(input_bytes));
+        let mut csv_reader = AsyncReaderBuilder::new()
             .delimiter(if tsv { b'\t' } else { b',' })
-            .create_reader(file);
+            .create_reader(reader);
 
-        let headers = reader.headers().await?.clone();
-        let mut records = reader.into_records();
+        let headers = csv_reader.headers().await?.clone();
+        let mut records = csv_reader.into_records();
 
         while let Some(record) = records.next().await {
             let record = record?;
@@ -149,12 +156,12 @@ impl NormalizationEngine {
 
     async fn process_json(
         &self,
-        input_path: &Path,
+        input_bytes: Bytes,
         writer: &mut NormalizedWriter,
     ) -> Result<(), NormalizationError> {
-        let mut file = File::open(input_path).await?;
+        let mut cursor = Cursor::new(input_bytes);
         let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer).await?;
+        cursor.read_to_end(&mut buffer).await?;
 
         let trimmed = std::str::from_utf8(&buffer)
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?

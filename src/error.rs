@@ -6,6 +6,8 @@ use axum::{
 use serde::Serialize;
 use utoipa::ToSchema;
 
+use crate::services::StorageError;
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorBody {
     pub error: String,
@@ -17,6 +19,7 @@ pub enum ApiError {
     NotFound(String),
     Database(sqlx::Error),
     Io(std::io::Error),
+    Storage(StorageError),
 }
 
 impl From<sqlx::Error> for ApiError {
@@ -28,6 +31,12 @@ impl From<sqlx::Error> for ApiError {
 impl From<std::io::Error> for ApiError {
     fn from(error: std::io::Error) -> Self {
         Self::Io(error)
+    }
+}
+
+impl From<StorageError> for ApiError {
+    fn from(error: StorageError) -> Self {
+        Self::Storage(error)
     }
 }
 
@@ -45,6 +54,13 @@ impl IntoResponse for ApiError {
             }
             Self::Io(error) => {
                 tracing::error!(%error, "io error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal storage error".to_owned(),
+                )
+            }
+            Self::Storage(error) => {
+                tracing::error!(%error, "storage error");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "internal storage error".to_owned(),

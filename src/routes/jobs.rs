@@ -7,16 +7,14 @@ use axum::{
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
-use tokio_util::io::ReaderStream;
 use tracing::info;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ErrorBody};
 use crate::models::{JobResponse, JobStatus, UniversalProduct};
-use crate::services::{JobService, NormalizationEngine};
+use crate::services::{JobService, NormalizationEngine, normalized_output_key};
 use crate::state::AppState;
-use crate::utils::{ensure_within_uploads, normalized_output_path};
 
 pub fn protected_router(state: AppState) -> Router {
     Router::new()
@@ -53,6 +51,8 @@ pub struct HealthResponse {
 #[utoipa::path(
     post,
     path = "/jobs",
+    summary = "Queue a normalization job",
+    description = "Creates an async normalization job. Optionally pass a `preview` record to see how supplier field names map to the universal schema before uploading a full feed. Returns `202 Accepted` with a `job_id` for status polling.",
     request_body = CreateJobRequest,
     security(("ApiKeyAuth" = [])),
     responses(
@@ -93,6 +93,8 @@ pub async fn create_job(
 #[utoipa::path(
     get,
     path = "/jobs/{id}",
+    summary = "Get job status and metadata",
+    description = "Poll this endpoint after upload or job creation. When `status` is `finished`, call `GET /jobs/{id}/download` to retrieve normalized JSON output.",
     params(
         ("id" = Uuid, Path, description = "Job identifier"),
     ),
@@ -118,6 +120,8 @@ pub async fn get_job(
 #[utoipa::path(
     get,
     path = "/jobs/{id}/download",
+    summary = "Download normalized JSON output",
+    description = "Returns the normalized product catalog as a JSON file attachment. Only available when job `status` is `finished`. Each item follows the `UniversalProduct` schema with automatically mapped fields (sku, title, price, currency, ean).",
     params(
         ("id" = Uuid, Path, description = "Job identifier"),
     ),
@@ -145,19 +149,16 @@ pub async fn download_job(
         )));
     }
 
-    let path = normalized_output_path(id);
+    let output_key = normalized_output_key(id);
 
-    if !path.exists() {
+    if !state.storage.object_exists(&output_key).await? {
         return Err(ApiError::NotFound(format!(
             "normalized output for job {id} not found"
         )));
     }
 
-    ensure_within_uploads(&path)?;
-
-    let file = tokio::fs::File::open(&path).await?;
-    let stream = ReaderStream::new(file);
-    let body = Body::from_stream(stream);
+    let bytes = state.storage.get_object(&output_key).await?;
+    let body = Body::from(bytes);
 
     let download_name = job
         .filename
@@ -183,6 +184,8 @@ pub async fn download_job(
 #[utoipa::path(
     get,
     path = "/health",
+    summary = "Check API health",
+    description = "Lightweight liveness check. No authentication required. Use for uptime monitoring and RapidAPI health probes.",
     responses(
         (status = 200, description = "Service is healthy", body = HealthResponse),
     ),

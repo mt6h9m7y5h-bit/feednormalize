@@ -35,6 +35,8 @@ pub struct UploadForm {
 #[utoipa::path(
     post,
     path = "/feeds/upload",
+    summary = "Upload a product feed for normalization",
+    description = "Primary entry point for feed normalization. Send `multipart/form-data` with a required `file` field (CSV or JSON). Optionally include `job_id` to attach the upload to an existing job (must be sent before the file field). Processing runs asynchronously; poll `GET /jobs/{id}` until finished.",
     request_body(
         content = UploadForm,
         content_type = "multipart/form-data",
@@ -89,7 +91,7 @@ pub async fn upload_feed(
                 };
 
                 let (filename, size_bytes) =
-                    UploadService::store_original_file(job.id, field).await?;
+                    UploadService::store_original_file(&state.storage, job.id, field).await?;
 
                 upload = Some((job.id, filename, size_bytes, detected_format));
             }

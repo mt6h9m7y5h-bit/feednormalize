@@ -71,6 +71,12 @@ Open the **FeedNormalize** (app) service → **Variables**:
 | `HOST` | no | `0.0.0.0` (Dockerfile default; required for container networking) |
 | `PORT` | auto | Railway injects this — **do not override** |
 | `REDIS_URL` | no | Optional Redis for distributed rate limits |
+| `STORAGE_BACKEND` | prod | `s3` for durable uploads (see [Object storage](#object-storage-s3--r2)) |
+| `S3_BUCKET` | s3 | Your bucket name |
+| `S3_REGION` | s3 | AWS region (or `auto` for R2) |
+| `AWS_ACCESS_KEY_ID` | s3 | Access key |
+| `AWS_SECRET_ACCESS_KEY` | s3 | Secret key |
+| `S3_ENDPOINT` | R2/MinIO | Custom HTTPS endpoint |
 
 ### `API_KEY_SEED` behavior
 
@@ -134,6 +140,12 @@ curl -s -H "x-api-key: YOUR_API_KEY_SEED" \
 | `API_KEY_SEED` | no* | `dev-test-api-key` | Initial API key when `api_keys` table is empty |
 | `API_KEY_SEED_NAME` | no | `default-dev-key` | Display name for the seeded key |
 | `REDIS_URL` | no | — | Optional Redis for distributed rate limits |
+| `STORAGE_BACKEND` | no | `local` | `local` (filesystem `./uploads/`) or `s3` |
+| `S3_BUCKET` | s3 only | — | Bucket name when `STORAGE_BACKEND=s3` |
+| `S3_REGION` | s3 only | — | AWS region (or set `AWS_REGION`) |
+| `AWS_ACCESS_KEY_ID` | s3 only | — | S3/R2 access key |
+| `AWS_SECRET_ACCESS_KEY` | s3 only | — | S3/R2 secret key |
+| `S3_ENDPOINT` | no | — | Custom endpoint for R2/MinIO (HTTPS URL) |
 
 \*Strongly recommended in production.
 
@@ -169,9 +181,42 @@ Requires Postgres reachable from the container (`docker compose up -d` from this
 
 ---
 
-## Ephemeral disk
+## Object storage (S3 / R2)
 
-Job uploads live under `uploads/` on the container filesystem. On Railway this is **ephemeral** — files are lost on redeploy or restart. Plan object storage (S3, R2, etc.) for durable files later.
+Railway container disk is **ephemeral** — use S3-compatible object storage in production.
+
+### AWS S3
+
+1. Create an S3 bucket in your AWS account.
+2. Create an IAM user with `s3:PutObject`, `s3:GetObject`, `s3:HeadObject` on that bucket.
+3. Set on the FeedNormalize service:
+
+| Variable | Example |
+|----------|---------|
+| `STORAGE_BACKEND` | `s3` |
+| `S3_BUCKET` | `feednormalize-prod` |
+| `S3_REGION` | `eu-central-1` |
+| `AWS_ACCESS_KEY_ID` | `AKIA...` |
+| `AWS_SECRET_ACCESS_KEY` | `...` |
+
+### Cloudflare R2
+
+1. Create an R2 bucket in the Cloudflare dashboard.
+2. Create R2 API tokens with read/write access.
+3. Set:
+
+| Variable | Example |
+|----------|---------|
+| `STORAGE_BACKEND` | `s3` |
+| `S3_BUCKET` | `feednormalize` |
+| `S3_REGION` | `auto` |
+| `AWS_ACCESS_KEY_ID` | R2 access key ID |
+| `AWS_SECRET_ACCESS_KEY` | R2 secret access key |
+| `S3_ENDPOINT` | `https://ACCOUNT_ID.r2.cloudflarestorage.com` |
+
+Object keys: `{job_id}/original_file` and `{job_id}/normalized_output.json`.
+
+Local dev (`STORAGE_BACKEND=local` or unset) continues to use `./uploads/` with no credentials.
 
 ---
 

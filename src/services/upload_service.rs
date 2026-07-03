@@ -1,14 +1,15 @@
 use axum::extract::multipart::Field;
-use tokio::io::AsyncWriteExt;
+use bytes::Bytes;
 use uuid::Uuid;
 
 use crate::error::ApiError;
-use crate::utils::original_file_path;
+use crate::services::{StorageService, original_file_key};
 
 pub struct UploadService;
 
 impl UploadService {
     pub async fn store_original_file(
+        storage: &StorageService,
         job_id: Uuid,
         mut field: Field<'_>,
     ) -> Result<(String, u64), ApiError> {
@@ -17,22 +18,19 @@ impl UploadService {
             .map(ToString::to_string)
             .unwrap_or_else(|| "upload".to_string());
 
-        let path = original_file_path(job_id);
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
-        let mut file = tokio::fs::File::create(&path).await?;
+        let mut data = Vec::new();
         let mut size_bytes = 0_u64;
 
         while let Some(chunk) = field.chunk().await.map_err(|error| {
             ApiError::BadRequest(format!("failed to read upload stream: {error}"))
         })? {
             size_bytes += chunk.len() as u64;
-            file.write_all(&chunk).await?;
+            data.extend_from_slice(&chunk);
         }
 
-        file.flush().await?;
+        storage
+            .put_object(&original_file_key(job_id), Bytes::from(data))
+            .await?;
 
         Ok((filename, size_bytes))
     }

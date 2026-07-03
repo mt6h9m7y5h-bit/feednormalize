@@ -80,7 +80,15 @@ async fn main() {
         }
     };
 
-    worker::spawn(pool.clone());
+    let storage = match services::StorageService::from_env().await {
+        Ok(storage) => storage,
+        Err(error) => {
+            error!(%error, "failed to initialize object storage");
+            std::process::exit(1);
+        }
+    };
+
+    worker::spawn(pool.clone(), storage.clone());
 
     let rate_limiter = match rate_limit::RateLimiter::new().await {
         Ok(limiter) => std::sync::Arc::new(limiter),
@@ -90,7 +98,7 @@ async fn main() {
         }
     };
 
-    let state = state::AppState::new(pool, rate_limiter);
+    let state = state::AppState::new(pool, rate_limiter, storage);
 
     let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_owned());
     let port = std::env::var("PORT")

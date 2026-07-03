@@ -1,5 +1,6 @@
 pub mod feeds;
 pub mod jobs;
+pub mod webhooks;
 
 use axum::{Router, middleware, routing::get};
 use tower::ServiceBuilder;
@@ -14,6 +15,7 @@ use crate::state::AppState;
 pub fn create_router(state: AppState) -> Router {
     let public = Router::new()
         .route("/health", get(health))
+        .merge(webhooks::router())
         .merge(
             SwaggerUi::new("/swagger-ui")
                 .url("/api-docs/openapi.json", ApiDoc::openapi()),

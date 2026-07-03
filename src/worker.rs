@@ -3,9 +3,9 @@ use std::time::Duration;
 use sqlx::PgPool;
 use tracing::{error, info, warn};
 
-use crate::services::{JobService, NormalizationEngine};
+use crate::services::{JobService, NormalizationEngine, StorageService};
 
-pub fn spawn(pool: PgPool) {
+pub fn spawn(pool: PgPool, storage: StorageService) {
     tokio::spawn(async move {
         let engine = NormalizationEngine::new();
         info!("background worker started");
@@ -15,7 +15,7 @@ pub fn spawn(pool: PgPool) {
                 Ok(Some(job)) => {
                     info!(job_id = %job.id, format = ?job.format, "processing job");
 
-                    match engine.process_feed(&job).await {
+                    match engine.process_feed(&storage, &job).await {
                         Ok(()) => {
                             if let Err(db_error) = JobService::mark_finished(&pool, job.id).await {
                                 error!(job_id = %job.id, %db_error, "failed to mark job finished");
