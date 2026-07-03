@@ -33,6 +33,12 @@ pub fn spawn(pool: PgPool, storage: StorageService) {
                                     .await
                             {
                                 error!(job_id = %job.id, %db_error, "failed to complete job");
+
+                                if let Err(mark_error) =
+                                    JobService::mark_failed(&pool, job.id).await
+                                {
+                                    error!(job_id = %job.id, %mark_error, "failed to mark job failed");
+                                }
                             } else {
                                 info!(
                                     job_id = %job.id,
